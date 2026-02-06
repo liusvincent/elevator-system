@@ -1,0 +1,29 @@
+# Object files
+*.o
+*.obj
+
+# Executables
+*.out
+*.exe
+*.app
+
+# Libraries
+*.a
+*.so
+*.dylib
+*.dll
+
+# Build folders
+build/
+
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+
+# macOS
+.DS_Store
+
+# VS Code
+.vscode/
