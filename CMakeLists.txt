@@ -6,7 +6,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_subdirectory(external/SDL)
 
+add_library(elevator_core
+    src/elevator.cpp
+    src/dispatcher.cpp
+)
+
+target_include_directories(elevator_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
+
 add_executable(elevator-system src/main.cpp)
 
-target_link_libraries(elevator-system PRIVATE SDL3::SDL3)
+target_link_libraries(elevator-system PRIVATE elevator_core SDL3::SDL3)
 
