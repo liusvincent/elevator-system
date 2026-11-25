@@ -2,252 +2,184 @@
 
 #include <cstdlib>
 #include <limits>
-#include <ostream>
 #include <stdexcept>
 
 Elevator::Elevator()
-    : curr_floor_(MIN_FLOOR), state_(State::DOOR_CLOSE),
-      direction_(Direction::IDLE) {}
-
-int Elevator::getCurrFloor() const { return curr_floor_; }
-
-Direction Elevator::getDirection() const { return direction_; }
-
-int Elevator::getFirstRequest(Direction direction) const {
-  const std::set<int> *temp_set = nullptr;
-  if (direction == Direction::UP)
-    temp_set = &external_up_;
-  else if (direction == Direction::DOWN)
-    temp_set = &external_down_;
-  if (temp_set == nullptr || temp_set->empty()) {
-    throw std::logic_error("No requests in set");
-  }
-  return *temp_set->begin();
-}
-
-int Elevator::getFinalRequest(Direction direction) const {
-  const std::set<int> *temp_set = nullptr;
-  if (direction == Direction::UP)
-    temp_set = &external_up_;
-  else if (direction == Direction::DOWN)
-    temp_set = &external_down_;
-  if (temp_set == nullptr || temp_set->empty()) {
-    throw std::logic_error("No requests in set");
-  }
-  return *temp_set->rbegin();
-}
+    : currentFloor_(MIN_FLOOR), direction_(Direction::Idle),
+      state_(ElevatorState::Idle) {}
 
 void Elevator::addInternalRequest(int floor) {
-  // if (floor == curr_floor_) serviceCurrFloor(); open door not service floor
-  // or do i handle in step look
-  if (floor <= 0 || floor > MAX_FLOOR) {
-    throw std::out_of_range("Invalid Floor Request: Out of Floor Range");
+  if (floor < MIN_FLOOR || floor > MAX_FLOOR) {
+    throw std::out_of_range("Invalid floor request: out of floor range");
   }
-  internal_requests_.insert(floor);
+
+  internalRequests_.insert(floor);
 }
 
-void Elevator::addExternalCall(int floor, Direction direction) {
-  // if (floor == curr_floor_) serviceCurrFloor(); open door not service floor
-  // or do i handle in step look
-  if (floor <= 0 || floor > MAX_FLOOR) {
-    throw std::out_of_range("Invalid Floor Request: Out of Floor Range");
+void Elevator::assignHallCall(HallCall call) {
+  if (call.floor < MIN_FLOOR || call.floor > MAX_FLOOR) {
+    throw std::out_of_range("Invalid hall call: out of floor range");
   }
-  if (direction == Direction::IDLE) {
-    throw std::invalid_argument(
-        "Invalid Floor Request: External Call Can't be IDLE");
-  } else if (direction == Direction::UP) {
-    external_up_.insert(floor);
-  } else if (direction == Direction::DOWN) {
-    external_down_.insert(floor);
-  }
-}
-
-void Elevator::removeRequest(std::set<int> &input_set, int floor) {
-  auto it = input_set.find(floor);
-  if (it != input_set.end())
-    input_set.erase(it);
-}
-
-ServiceEvent Elevator::serviceCurrFloor() {
-  ServiceEvent event{false, curr_floor_, direction_, false};
-
-  state_ = State::STOPPED;
-
-  // remove request
-  if (direction_ == Direction::UP && external_up_.count(curr_floor_)) {
-    removeRequest(external_up_, curr_floor_);
-    event.served = true;
-    event.was_hall = true;
-  }
-  if (direction_ == Direction::DOWN && external_down_.count(curr_floor_)) {
-    removeRequest(external_down_, curr_floor_);
-    event.served = true;
-    event.was_hall = true;
-  }
-  if (internal_requests_.count(curr_floor_)) {
-    removeRequest(internal_requests_, curr_floor_);
-    event.served = true;
+  if (call.direction == Direction::Idle) {
+    throw std::invalid_argument("Invalid hall call: direction cannot be idle");
   }
 
-  // handleDoors()
-
-  return event;
-}
-
-void Elevator::checkClosest(const std::set<int> &input_set, int &closest,
-                            int &closest_floor) const {
-  // to help decide direction
-  for (int floor : input_set) {
-    int distance = std::abs(curr_floor_ - floor);
-    if (distance <= closest) {
-      closest = distance;
-      closest_floor = floor;
-    }
-  }
-}
-
-Direction Elevator::decideDirection() {
-  /*
-  Decide on direction by checking which call/request is the closest to current
-  floor when idle
-  */
-  int closest_floor = -1;
-  int closest = std::numeric_limits<int>::max();
-
-  if (internal_requests_.empty() && external_down_.empty() &&
-      external_up_.empty()) {
-    return Direction::IDLE;
+  if (call.direction == Direction::Up) {
+    upHallCalls_.insert(call.floor);
   } else {
-    if (!internal_requests_.empty())
-      checkClosest(internal_requests_, closest, closest_floor);
-    if (!external_down_.empty())
-      checkClosest(external_down_, closest, closest_floor);
-    if (!external_up_.empty())
-      checkClosest(external_up_, closest, closest_floor);
-    if (closest_floor > curr_floor_)
-      return Direction::UP;
-    else if (closest_floor < curr_floor_)
-      return Direction::DOWN;
-    else {
-      if (external_up_.count(closest_floor))
-        return Direction::UP;
-      if (external_down_.count(closest_floor))
-        return Direction::DOWN;
-      return Direction::IDLE;
-    }
+    downHallCalls_.insert(call.floor);
   }
 }
 
-bool Elevator::hasRequestAtCurrFloor() const {
-  if (internal_requests_.count(curr_floor_))
+std::optional<ServiceEvent> Elevator::step() {
+  if (direction_ == Direction::Idle) {
+    chooseDirection();
+  }
+
+  if (hasRequestAtCurrentFloor()) {
+    return serviceCurrentFloor();
+  }
+
+  if (!hasRequestInCurrentDirection()) {
+    chooseDirection();
+
+    if (hasRequestAtCurrentFloor()) {
+      return serviceCurrentFloor();
+    }
+  }
+
+  if (direction_ == Direction::Idle) {
+    state_ = ElevatorState::Idle;
+    return std::nullopt;
+  }
+
+  moveOneFloor();
+  return std::nullopt;
+}
+
+ElevatorSnapshot Elevator::snapshot() const {
+  return {currentFloor_, direction_, state_, hasPendingRequests()};
+}
+
+bool Elevator::hasPendingRequests() const {
+  return !internalRequests_.empty() || !upHallCalls_.empty() ||
+         !downHallCalls_.empty();
+}
+
+bool Elevator::hasRequestAtCurrentFloor() const {
+  if (internalRequests_.contains(currentFloor_)) {
     return true;
-  if ((direction_ == Direction::UP || direction_ == Direction::IDLE) &&
-      external_up_.count(curr_floor_))
+  }
+  if (direction_ == Direction::Up && upHallCalls_.contains(currentFloor_)) {
     return true;
-  if ((direction_ == Direction::DOWN || direction_ == Direction::IDLE) &&
-      external_down_.count(curr_floor_))
+  }
+  if (direction_ == Direction::Down &&
+      downHallCalls_.contains(currentFloor_)) {
     return true;
+  }
+
   return false;
 }
 
-bool Elevator::hasRequestAhead() const {
-  if (direction_ == Direction::UP) {
-    for (int floor : internal_requests_) {
-      if (floor > curr_floor_)
-        return true;
-    }
-    for (int floor : external_up_) {
-      if (floor > curr_floor_)
-        return true;
-    }
-  } else if (direction_ == Direction::DOWN) {
-    for (int floor : internal_requests_) {
-      if (floor < curr_floor_)
-        return true;
-    }
-    for (int floor : external_down_) {
-      if (floor < curr_floor_)
-        return true;
-    }
+bool Elevator::hasRequestAbove() const {
+  return internalRequests_.upper_bound(currentFloor_) !=
+             internalRequests_.end() ||
+         upHallCalls_.upper_bound(currentFloor_) != upHallCalls_.end() ||
+         downHallCalls_.upper_bound(currentFloor_) != downHallCalls_.end();
+}
+
+bool Elevator::hasRequestBelow() const {
+  return (!internalRequests_.empty() &&
+          *internalRequests_.begin() < currentFloor_) ||
+         (!upHallCalls_.empty() && *upHallCalls_.begin() < currentFloor_) ||
+         (!downHallCalls_.empty() &&
+          *downHallCalls_.begin() < currentFloor_);
+}
+
+bool Elevator::hasRequestInCurrentDirection() const {
+  if (direction_ == Direction::Up) {
+    return hasRequestAbove();
   }
+  if (direction_ == Direction::Down) {
+    return hasRequestBelow();
+  }
+
   return false;
 }
 
-ServiceEvent Elevator::stepLOOK() {
-  ServiceEvent event{false, curr_floor_, direction_, false};
+void Elevator::chooseDirection() {
+  if (!hasPendingRequests()) {
+    direction_ = Direction::Idle;
+    return;
+  }
 
-  if (direction_ == Direction::IDLE) {
-    direction_ = decideDirection();
+  if (upHallCalls_.contains(currentFloor_)) {
+    direction_ = Direction::Up;
+    return;
   }
-  if (hasRequestAtCurrFloor()) {
-    event = serviceCurrFloor();
-    return event;
+  if (downHallCalls_.contains(currentFloor_)) {
+    direction_ = Direction::Down;
+    return;
   }
-  if (hasRequestAhead()) {
-    if (direction_ == Direction::UP) {
-      if (curr_floor_ != MAX_FLOOR) {
-        curr_floor_++;
-        state_ = State::MOVING;
-      }
-    } else if (direction_ == Direction::DOWN) {
-      if (curr_floor_ != MIN_FLOOR) {
-        curr_floor_--;
-        state_ = State::MOVING;
+
+  int closestDistance = std::numeric_limits<int>::max();
+  int closestFloor = std::numeric_limits<int>::max();
+
+  const auto considerRequests = [&](const std::set<int> &requests) {
+    for (int floor : requests) {
+      const int distance = std::abs(currentFloor_ - floor);
+      if (distance < closestDistance ||
+          (distance == closestDistance && floor < closestFloor)) {
+        closestDistance = distance;
+        closestFloor = floor;
       }
     }
-  } else {
-    state_ = State::STOPPED;
-    direction_ = Direction::IDLE;
-  }
+  };
 
-  return event;
+  considerRequests(internalRequests_);
+  considerRequests(upHallCalls_);
+  considerRequests(downHallCalls_);
+
+  if (closestFloor > currentFloor_) {
+    direction_ = Direction::Up;
+  } else if (closestFloor < currentFloor_) {
+    direction_ = Direction::Down;
+  } else {
+    direction_ = Direction::Idle;
+  }
 }
 
-std::ostream &operator<<(std::ostream &os, const Elevator &elevator) {
-  // I just want to see a snapshot of the elevator to see if it's working
-  os << "Direction: "
-     << (elevator.direction_ == Direction::UP
-             ? "UP"
-             : (elevator.direction_ == Direction::DOWN ? "DOWN" : "IDLE"))
-     << std::endl;
-  os << "State: ";
-  switch (elevator.state_) {
-    using enum State;
-  case (DOOR_OPEN):
-    os << "DOOR_OPEN";
-    break;
-  case (DOOR_CLOSE):
-    os << "DOOR_CLOSE";
-    break;
-  case (DOOR_OPENING):
-    os << "DOOR_OPENING";
-    break;
-  case (DOOR_CLOSING):
-    os << "DOOR_CLOSING";
-    break;
-  case (MOVING):
-    os << "MOVING";
-    break;
-  case (STOPPED):
-    os << "STOPPED";
-    break;
+void Elevator::moveOneFloor() {
+  if (direction_ == Direction::Up && currentFloor_ < MAX_FLOOR) {
+    ++currentFloor_;
+    state_ = ElevatorState::Moving;
+  } else if (direction_ == Direction::Down && currentFloor_ > MIN_FLOOR) {
+    --currentFloor_;
+    state_ = ElevatorState::Moving;
+  } else {
+    direction_ = Direction::Idle;
+    state_ = ElevatorState::Idle;
   }
-  os << std::endl;
-  os << "Current Floor: " << elevator.curr_floor_ << std::endl;
-  os << "Internal Request: ";
-  for (const auto &i : elevator.internal_requests_) {
-    os << i << " ";
+}
+
+std::optional<ServiceEvent> Elevator::serviceCurrentFloor() {
+  ServiceEvent event{currentFloor_, false, std::nullopt};
+
+  if (internalRequests_.erase(currentFloor_) > 0) {
+    event.servedInternalRequest = true;
   }
-  os << std::endl;
-  os << "External Up: ";
-  for (const auto &i : elevator.external_up_) {
-    os << i << " ";
+
+  if (direction_ == Direction::Up && upHallCalls_.erase(currentFloor_) > 0) {
+    event.servedHallCall = Direction::Up;
+  } else if (direction_ == Direction::Down &&
+             downHallCalls_.erase(currentFloor_) > 0) {
+    event.servedHallCall = Direction::Down;
   }
-  os << std::endl;
-  os << "External Down: ";
-  for (const auto &i : elevator.external_down_) {
-    os << i << " ";
+
+  if (!event.servedInternalRequest && !event.servedHallCall) {
+    return std::nullopt;
   }
-  os << std::endl;
-  return os;
+
+  state_ = ElevatorState::DoorsOpen;
+  return event;
 }

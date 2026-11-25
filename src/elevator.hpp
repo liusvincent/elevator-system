@@ -1,60 +1,59 @@
 #pragma once
 
-#include <iosfwd>
+#include <optional>
 #include <set>
 
 inline constexpr int MAX_FLOOR = 5;
 inline constexpr int MIN_FLOOR = 1;
 
-enum class Direction { IDLE = 0, DOWN = -1, UP = 1 };
+enum class Direction { Down = -1, Idle = 0, Up = 1 };
 
-enum class State {
-  DOOR_OPEN,
-  DOOR_CLOSE,
-  DOOR_OPENING,
-  DOOR_CLOSING,
-  STOPPED,
-  MOVING
+enum class ElevatorState { Idle, Moving, DoorsOpen };
+
+struct HallCall {
+  int floor;
+  Direction direction;
 };
 
 struct ServiceEvent {
-  bool served;
   int floor;
+  bool servedInternalRequest;
+  std::optional<Direction> servedHallCall;
+};
+
+struct ElevatorSnapshot {
+  int currentFloor;
   Direction direction;
-  bool was_hall;
+  ElevatorState state;
+  bool hasPendingRequests;
 };
 
 class Elevator {
-  friend std::ostream &operator<<(std::ostream &os, const Elevator &elevator);
-
 public:
   Elevator();
 
-  int getCurrFloor() const;
-  Direction getDirection() const;
-
-  int getFirstRequest(Direction direction) const;
-  int getFinalRequest(Direction direction) const;
-
   void addInternalRequest(int floor);
-  void addExternalCall(int floor, Direction direction);
-  void removeRequest(std::set<int> &input_set, int floor);
+  void assignHallCall(HallCall call);
 
-  ServiceEvent serviceCurrFloor();
+  std::optional<ServiceEvent> step();
 
-  void checkClosest(const std::set<int> &input_set, int &closest,
-                    int &closest_floor) const;
-
-  Direction decideDirection();
-  bool hasRequestAtCurrFloor() const;
-  bool hasRequestAhead() const;
-  ServiceEvent stepLOOK();
+  ElevatorSnapshot snapshot() const;
+  bool hasPendingRequests() const;
 
 private:
-  int curr_floor_;
-  State state_;
+  bool hasRequestAtCurrentFloor() const;
+  bool hasRequestAbove() const;
+  bool hasRequestBelow() const;
+  bool hasRequestInCurrentDirection() const;
+
+  void chooseDirection();
+  void moveOneFloor();
+  std::optional<ServiceEvent> serviceCurrentFloor();
+
+  int currentFloor_;
   Direction direction_;
-  std::set<int> internal_requests_;
-  std::set<int> external_up_;
-  std::set<int> external_down_;
+  ElevatorState state_;
+  std::set<int> internalRequests_;
+  std::set<int> upHallCalls_;
+  std::set<int> downHallCalls_;
 };
