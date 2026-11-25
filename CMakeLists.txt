@@ -17,3 +17,17 @@ add_executable(elevator-system src/main.cpp)
 
 target_link_libraries(elevator-system PRIVATE elevator_core SDL3::SDL3)
 
+enable_testing()
+
+add_executable(elevator_tests tests/test_elevator.cpp)
+
+target_link_libraries(elevator_tests PRIVATE elevator_core)
+
+add_test(NAME elevator_tests COMMAND elevator_tests)
+
+add_executable(dispatcher_tests tests/test_dispatcher.cpp)
+
+target_link_libraries(dispatcher_tests PRIVATE elevator_core)
+
+add_test(NAME dispatcher_tests COMMAND dispatcher_tests)
+
