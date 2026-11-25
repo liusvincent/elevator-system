@@ -1,4 +1,5 @@
 #include "dispatcher.hpp"
+#include "simulation_timing.hpp"
 
 #include <exception>
 #include <iostream>
@@ -11,6 +12,12 @@ namespace {
 void expect(bool condition, std::string_view message) {
   if (!condition) {
     throw std::runtime_error(std::string(message));
+  }
+}
+
+void tick(Dispatcher &dispatcher, int count) {
+  for (int i = 0; i < count; ++i) {
+    dispatcher.tick();
   }
 }
 
@@ -93,6 +100,29 @@ void testRejectsIdleHallCall() {
          "Dispatcher should reject an idle hall-call direction");
 }
 
+void testRejectsImpossibleBoundaryHallCalls() {
+  Dispatcher dispatcher{1};
+  bool rejectedBottomDown = false;
+  bool rejectedTopUp = false;
+
+  try {
+    dispatcher.addHallCall({MIN_FLOOR, Direction::Down});
+  } catch (const std::invalid_argument &) {
+    rejectedBottomDown = true;
+  }
+
+  try {
+    dispatcher.addHallCall({MAX_FLOOR, Direction::Up});
+  } catch (const std::invalid_argument &) {
+    rejectedTopUp = true;
+  }
+
+  expect(rejectedBottomDown,
+         "Dispatcher should reject a DOWN call at the bottom floor");
+  expect(rejectedTopUp,
+         "Dispatcher should reject an UP call at the top floor");
+}
+
 void testDeduplicatesHallCalls() {
   Dispatcher dispatcher{1};
   const HallCall call{3, Direction::Up};
@@ -102,8 +132,8 @@ void testDeduplicatesHallCalls() {
 
   int matchingEvents = 0;
 
-  for (int step = 0; step < 20; ++step) {
-    for (const DispatcherServiceEvent &event : dispatcher.advance()) {
+  for (int tick = 0; tick < 2'000; ++tick) {
+    for (const DispatcherServiceEvent &event : dispatcher.tick()) {
       if (event.service.floor == call.floor &&
           event.service.servedHallCall == call.direction) {
         ++matchingEvents;
@@ -119,7 +149,8 @@ void testChoosesElevatorWithShortestSimulatedRoute() {
   Dispatcher dispatcher{2};
 
   dispatcher.selectFloor(0, 5);
-  dispatcher.advance();
+  dispatcher.tick();
+  tick(dispatcher, simulation_timing::TRAVEL_TICKS_PER_FLOOR);
 
   const HallCall call{4, Direction::Up};
   dispatcher.addHallCall(call);
@@ -128,24 +159,28 @@ void testChoosesElevatorWithShortestSimulatedRoute() {
          "Moving elevator should receive an on-route hall call");
 }
 
-void testAdvancesEveryElevator() {
+void testTicksEveryElevator() {
   Dispatcher dispatcher{2};
 
   dispatcher.selectFloor(0, 3);
   dispatcher.selectFloor(1, 3);
-  dispatcher.advance();
+  dispatcher.tick();
 
-  expect(dispatcher.elevatorSnapshot(0).currentFloor == 2,
-         "First elevator should advance");
-  expect(dispatcher.elevatorSnapshot(1).currentFloor == 2,
-         "Second elevator should advance");
+  expect(dispatcher.elevatorSnapshot(0).currentFloor == MIN_FLOOR,
+         "One tick should not move the first elevator a full floor");
+  expect(dispatcher.elevatorSnapshot(1).currentFloor == MIN_FLOOR,
+         "One tick should not move the second elevator a full floor");
+  expect(dispatcher.elevatorSnapshot(0).state == ElevatorState::Moving,
+         "First elevator should begin moving");
+  expect(dispatcher.elevatorSnapshot(1).state == ElevatorState::Moving,
+         "Second elevator should begin moving");
 }
 
 void testTagsServiceEventWithElevatorId() {
   Dispatcher dispatcher{2};
   dispatcher.selectFloor(1, MIN_FLOOR);
 
-  const std::vector<DispatcherServiceEvent> events = dispatcher.advance();
+  const std::vector<DispatcherServiceEvent> events = dispatcher.tick();
 
   expect(events.size() == 1, "Expected one service event");
   expect(events.front().elevatorId == ElevatorId{1},
@@ -162,7 +197,7 @@ void testClearsCompletedAssignment() {
   expect(dispatcher.assignedElevator(call).has_value(),
          "Hall call should be assigned");
 
-  dispatcher.advance();
+  dispatcher.tick();
 
   expect(!dispatcher.assignedElevator(call).has_value(),
          "Completed hall call assignment should be removed");
@@ -173,7 +208,7 @@ void testAllowsHallCallAgainAfterCompletion() {
   const HallCall call{MIN_FLOOR, Direction::Up};
 
   dispatcher.addHallCall(call);
-  dispatcher.advance();
+  dispatcher.tick();
   dispatcher.addHallCall(call);
 
   expect(dispatcher.assignedElevator(call) == ElevatorId{0},
@@ -198,7 +233,8 @@ void testForwardsInternalFloorSelection() {
   Dispatcher dispatcher{1};
 
   dispatcher.selectFloor(0, 3);
-  dispatcher.advance();
+  dispatcher.tick();
+  tick(dispatcher, simulation_timing::TRAVEL_TICKS_PER_FLOOR);
 
   const ElevatorSnapshot snapshot = dispatcher.elevatorSnapshot(0);
   expect(snapshot.currentFloor == 2,
@@ -220,12 +256,13 @@ int main() {
   failures += !runTest("rejects hall call outside building",
                        testRejectsHallCallOutsideBuilding);
   failures += !runTest("rejects idle hall call", testRejectsIdleHallCall);
+  failures += !runTest("rejects impossible boundary hall calls",
+                       testRejectsImpossibleBoundaryHallCalls);
   failures +=
       !runTest("deduplicates hall calls", testDeduplicatesHallCalls);
   failures += !runTest("chooses elevator with shortest simulated route",
                        testChoosesElevatorWithShortestSimulatedRoute);
-  failures +=
-      !runTest("advances every elevator", testAdvancesEveryElevator);
+  failures += !runTest("ticks every elevator", testTicksEveryElevator);
   failures += !runTest("tags service event with elevator id",
                        testTagsServiceEventWithElevatorId);
   failures += !runTest("clears completed assignment",

@@ -19,6 +19,11 @@ void Dispatcher::addHallCall(HallCall call) {
   if (call.direction == Direction::Idle) {
     throw std::invalid_argument("Hall call direction cannot be idle");
   }
+  if ((call.floor == MIN_FLOOR && call.direction == Direction::Down) ||
+      (call.floor == MAX_FLOOR && call.direction == Direction::Up)) {
+    throw std::invalid_argument(
+        "Hall call direction is invalid for this floor");
+  }
 
   const auto key = std::pair{call.floor, call.direction};
   if (assignments_.contains(key)) {
@@ -34,11 +39,11 @@ void Dispatcher::selectFloor(ElevatorId elevatorId, int floor) {
   elevators_.at(elevatorId).addInternalRequest(floor);
 }
 
-std::vector<DispatcherServiceEvent> Dispatcher::advance() {
+std::vector<DispatcherServiceEvent> Dispatcher::tick() {
   std::vector<DispatcherServiceEvent> events;
 
   for (ElevatorId id = 0; id < elevators_.size(); ++id) {
-    const std::optional<ServiceEvent> service = elevators_[id].step();
+    const std::optional<ServiceEvent> service = elevators_[id].tick();
     if (!service) {
       continue;
     }
@@ -66,6 +71,17 @@ Dispatcher::elevatorSnapshot(ElevatorId elevatorId) const {
   return elevators_.at(elevatorId).snapshot();
 }
 
+std::vector<HallCallAssignment> Dispatcher::hallCallAssignments() const {
+  std::vector<HallCallAssignment> result;
+  result.reserve(assignments_.size());
+
+  for (const auto &[call, elevatorId] : assignments_) {
+    result.push_back({{call.first, call.second}, elevatorId});
+  }
+
+  return result;
+}
+
 std::optional<ElevatorId>
 Dispatcher::assignedElevator(HallCall call) const {
   const auto assignment = assignments_.find({call.floor, call.direction});
@@ -78,12 +94,12 @@ Dispatcher::assignedElevator(HallCall call) const {
 
 ElevatorId Dispatcher::chooseElevator(HallCall call) const {
   ElevatorId bestElevator = 0;
-  int bestSteps = std::numeric_limits<int>::max();
+  int bestTicks = std::numeric_limits<int>::max();
 
   for (ElevatorId id = 0; id < elevators_.size(); ++id) {
-    const int steps = estimateSteps(elevators_[id], call);
-    if (steps < bestSteps) {
-      bestSteps = steps;
+    const int ticks = estimatePickupTicks(elevators_[id], call);
+    if (ticks < bestTicks) {
+      bestTicks = ticks;
       bestElevator = id;
     }
   }
@@ -91,18 +107,19 @@ ElevatorId Dispatcher::chooseElevator(HallCall call) const {
   return bestElevator;
 }
 
-int Dispatcher::estimateSteps(const Elevator &elevator, HallCall call) const {
+int Dispatcher::estimatePickupTicks(const Elevator &elevator,
+                                    HallCall call) const {
   Elevator candidate = elevator;
   candidate.assignHallCall(call);
 
-  constexpr int maximumSteps = 100;
+  constexpr int MAX_PICKUP_ESTIMATE_TICKS = 10'000;
 
-  for (int steps = 1; steps <= maximumSteps; ++steps) {
-    const std::optional<ServiceEvent> service = candidate.step();
+  for (int ticks = 1; ticks <= MAX_PICKUP_ESTIMATE_TICKS; ++ticks) {
+    const std::optional<ServiceEvent> service = candidate.tick();
 
     if (service && service->floor == call.floor &&
         service->servedHallCall == call.direction) {
-      return steps;
+      return ticks;
     }
   }
 

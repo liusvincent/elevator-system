@@ -2,7 +2,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 
-#include "dispatcher.hpp"
+#include "simulation.hpp"
 
 constexpr int NUM_ELEVATORS = 3;
 constexpr int WIN_WIDTH = 1280;
@@ -34,7 +34,7 @@ constexpr float PANEL_HEIGHT = BUILDING_HEIGHT;
 
 static SDL_Window *window = nullptr;
 static SDL_Renderer *renderer = nullptr;
-static Dispatcher dispatcher{NUM_ELEVATORS};
+static Simulation simulation{NUM_ELEVATORS};
 
 struct UiState {
   int selectedFloor = MIN_FLOOR;
@@ -64,7 +64,8 @@ const char *directionLabel(Direction direction) {
   return "UNKNOWN";
 }
 
-void renderBuilding(const UiState &uiState) {
+void renderBuilding(const UiState &uiState,
+                    const SimulationSnapshot &snapshot) {
   SDL_SetRenderDrawColor(renderer, 48, 59, 71, 255);
   const SDL_FRect building{BUILDING_X, BUILDING_Y, BUILDING_WIDTH,
                            BUILDING_HEIGHT};
@@ -98,7 +99,7 @@ void renderBuilding(const UiState &uiState) {
   }
 
   SDL_SetRenderDrawColor(renderer, 9, 13, 18, 255);
-  for (ElevatorId id = 0; id < dispatcher.elevatorCount(); ++id) {
+  for (ElevatorId id = 0; id < snapshot.elevators.size(); ++id) {
     const SDL_FRect shaft{shaftX(id), INNER_Y, SHAFT_WIDTH, INNER_HEIGHT};
     SDL_RenderFillRect(renderer, &shaft);
   }
@@ -128,7 +129,7 @@ void renderBuilding(const UiState &uiState) {
                              WAITING_AREA_WIDTH, 6.0F};
   SDL_RenderFillRect(renderer, &lobbyFloor);
 
-  for (ElevatorId id = 0; id < dispatcher.elevatorCount(); ++id) {
+  for (ElevatorId id = 0; id < snapshot.elevators.size(); ++id) {
     if (id == uiState.selectedElevator) {
       SDL_SetRenderDrawColor(renderer, 78, 190, 220, 255);
     } else {
@@ -160,7 +161,7 @@ void renderBuilding(const UiState &uiState) {
 
     if (hasUpButton) {
       const bool active =
-          dispatcher.assignedElevator({floor, Direction::Up}).has_value();
+          snapshot.assignedElevator({floor, Direction::Up}).has_value();
       SDL_SetRenderDrawColor(renderer, active ? 116 : 67, active ? 201 : 78,
                              active ? 142 : 90, 255);
       const SDL_FRect upButton{buttonX, upY, BUTTON_SIZE, BUTTON_SIZE};
@@ -171,7 +172,7 @@ void renderBuilding(const UiState &uiState) {
     }
 
     if (hasDownButton) {
-      const bool active = dispatcher
+      const bool active = snapshot
                               .assignedElevator({floor, Direction::Down})
                               .has_value();
       SDL_SetRenderDrawColor(renderer, active ? 220 : 67, active ? 112 : 78,
@@ -231,14 +232,15 @@ void renderElevator(ElevatorId id, const ElevatorSnapshot &snapshot,
   SDL_RenderFillRect(renderer, &indicator);
 }
 
-void renderElevators(const UiState &uiState) {
-  for (ElevatorId id = 0; id < dispatcher.elevatorCount(); ++id) {
-    renderElevator(id, dispatcher.elevatorSnapshot(id),
-                   id == uiState.selectedElevator);
+void renderElevators(const UiState &uiState,
+                     const SimulationSnapshot &snapshot) {
+  for (ElevatorId id = 0; id < snapshot.elevators.size(); ++id) {
+    renderElevator(id, snapshot.elevators[id], id == uiState.selectedElevator);
   }
 }
 
-void renderStatusPanel(const UiState &uiState) {
+void renderStatusPanel(const UiState &uiState,
+                       const SimulationSnapshot &simulationSnapshot) {
   SDL_SetRenderDrawColor(renderer, 25, 33, 43, 255);
   const SDL_FRect panel{PANEL_X, PANEL_Y, PANEL_WIDTH, PANEL_HEIGHT};
   SDL_RenderFillRect(renderer, &panel);
@@ -254,8 +256,8 @@ void renderStatusPanel(const UiState &uiState) {
                             "SELECTED ELEVATOR: E%zu",
                             uiState.selectedElevator);
 
-  for (ElevatorId id = 0; id < dispatcher.elevatorCount(); ++id) {
-    const ElevatorSnapshot snapshot = dispatcher.elevatorSnapshot(id);
+  for (ElevatorId id = 0; id < simulationSnapshot.elevators.size(); ++id) {
+    const ElevatorSnapshot &snapshot = simulationSnapshot.elevators[id];
     const float y = PANEL_Y + 116.0F + static_cast<float>(id) * 54.0F;
 
     SDL_SetRenderDrawColor(renderer, 210, 217, 224, 255);
@@ -268,9 +270,11 @@ void renderStatusPanel(const UiState &uiState) {
   }
 
   const auto upAssignment =
-      dispatcher.assignedElevator({uiState.selectedFloor, Direction::Up});
+      simulationSnapshot.assignedElevator(
+          {uiState.selectedFloor, Direction::Up});
   const auto downAssignment =
-      dispatcher.assignedElevator({uiState.selectedFloor, Direction::Down});
+      simulationSnapshot.assignedElevator(
+          {uiState.selectedFloor, Direction::Down});
 
   SDL_SetRenderDrawColor(renderer, 210, 217, 224, 255);
   const float assignmentY = PANEL_Y + 300.0F;
@@ -393,29 +397,29 @@ SDL_AppResult handleKey(SDL_Keycode key, SDL_Keymod modifiers) {
     break;
 
   case SDLK_RIGHT:
-    if (ui.selectedElevator + 1 < dispatcher.elevatorCount()) {
+    if (ui.selectedElevator + 1 < simulation.elevatorCount()) {
       ++ui.selectedElevator;
     }
     break;
 
   case SDLK_U:
     if (ui.selectedFloor < MAX_FLOOR) {
-      dispatcher.addHallCall({ui.selectedFloor, Direction::Up});
+      simulation.addHallCall({ui.selectedFloor, Direction::Up});
     }
     break;
 
   case SDLK_D:
     if (ui.selectedFloor > MIN_FLOOR) {
-      dispatcher.addHallCall({ui.selectedFloor, Direction::Down});
+      simulation.addHallCall({ui.selectedFloor, Direction::Down});
     }
     break;
 
   case SDLK_E:
-    dispatcher.selectFloor(ui.selectedElevator, ui.selectedFloor);
+    simulation.selectFloor(ui.selectedElevator, ui.selectedFloor);
     break;
 
   case SDLK_SPACE:
-    dispatcher.advance();
+    simulation.tick();
     break;
   }
 
@@ -455,12 +459,14 @@ SDL_AppResult SDL_AppEvent(void *, SDL_Event *event) {
 }
 
 SDL_AppResult SDL_AppIterate(void *) {
+  const SimulationSnapshot snapshot = simulation.snapshot();
+
   SDL_SetRenderDrawColor(renderer, 16, 21, 29, 255);
   SDL_RenderClear(renderer);
 
-  renderBuilding(ui);
-  renderElevators(ui);
-  renderStatusPanel(ui);
+  renderBuilding(ui, snapshot);
+  renderElevators(ui, snapshot);
+  renderStatusPanel(ui, snapshot);
 
   if (ui.showHelp) {
     renderHelpOverlay();
