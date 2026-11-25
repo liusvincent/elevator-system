@@ -2,25 +2,36 @@
 
 #include "elevator.hpp"
 
+#include <cstddef>
 #include <map>
-#include <memory>
-#include <set>
+#include <optional>
 #include <utility>
 #include <vector>
 
+using ElevatorId = std::size_t;
+
+struct DispatcherServiceEvent {
+  ElevatorId elevatorId;
+  ServiceEvent service;
+};
+
 class Dispatcher {
 public:
-  explicit Dispatcher(int num_elevators);
+  explicit Dispatcher(int elevatorCount);
 
-  void addHallCall(int floor, Direction dir);
-  void removeHallCall(int floor, Direction dir);
+  void addHallCall(HallCall call);
+  void selectFloor(ElevatorId elevatorId, int floor);
 
-  int cost(Elevator *elevator, int target_floor, Direction call_dir);
-  void dispatch(int floor, Direction call_dir);
+  std::vector<DispatcherServiceEvent> advance();
+
+  std::size_t elevatorCount() const;
+  ElevatorSnapshot elevatorSnapshot(ElevatorId elevatorId) const;
+  std::optional<ElevatorId> assignedElevator(HallCall call) const;
 
 private:
-  std::set<int> up_calls_;
-  std::set<int> down_calls_;
-  std::vector<std::unique_ptr<Elevator>> elevators;
-  std::map<std::pair<int, Direction>, int> assigned_to_;
+  ElevatorId chooseElevator(HallCall call) const;
+  int estimateSteps(const Elevator &elevator, HallCall call) const;
+
+  std::vector<Elevator> elevators_;
+  std::map<std::pair<int, Direction>, ElevatorId> assignments_;
 };
