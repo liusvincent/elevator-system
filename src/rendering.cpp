@@ -15,10 +15,11 @@ constexpr float SHAFT_GAP = 12.0F;
 constexpr float FLOOR_SLAB_HEIGHT = 6.0F;
 constexpr float CAR_MARGIN_X = 7.0F;
 constexpr float CAR_MARGIN_Y = 10.0F;
+constexpr float CAR_BORDER = 5.0F;
 
 constexpr SDL_Color UP_PASSENGER_COLOR{116, 201, 142, 255};
 constexpr SDL_Color DOWN_PASSENGER_COLOR{220, 112, 112, 255};
-constexpr SDL_Color RIDING_PASSENGER_COLOR{54, 64, 74, 255};
+constexpr SDL_Color RIDING_PASSENGER_COLOR{216, 168, 78, 255};
 
 constexpr float INNER_X = BUILDING_X + WALL_WIDTH;
 constexpr float INNER_Y = BUILDING_Y + WALL_WIDTH;
@@ -63,6 +64,27 @@ SDL_FRect elevatorCarRect(const RenderContext &context, ElevatorId id,
   return {shaftX(context, id) + CAR_MARGIN_X, floorY + CAR_MARGIN_Y,
           context.shaftWidth - 2.0F * CAR_MARGIN_X,
           FLOOR_HEIGHT - 2.0F * CAR_MARGIN_Y};
+}
+
+SDL_FRect elevatorDoorwayRect(const SDL_FRect &car) {
+  return {car.x + CAR_BORDER, car.y + CAR_BORDER,
+          car.w - 2.0F * CAR_BORDER, car.h - 2.0F * CAR_BORDER};
+}
+
+float doorOpenness(const ElevatorSnapshot &elevator) {
+  switch (elevator.state) {
+  case ElevatorState::DoorOpening:
+    return std::clamp(elevator.stateProgress, 0.0F, 1.0F);
+  case ElevatorState::DoorOpen:
+    return 1.0F;
+  case ElevatorState::DoorClosing:
+    return 1.0F - std::clamp(elevator.stateProgress, 0.0F, 1.0F);
+  case ElevatorState::Idle:
+  case ElevatorState::Moving:
+    return 0.0F;
+  }
+
+  return 0.0F;
 }
 
 void renderFilledCircle(SDL_Renderer *renderer, float centerX, float centerY,
@@ -275,8 +297,8 @@ void renderBuilding(const RenderContext &context) {
   }
 }
 
-void renderElevator(const RenderContext &context, ElevatorId id,
-                    const ElevatorSnapshot &snapshot, bool selected) {
+void renderElevatorCar(const RenderContext &context, ElevatorId id,
+                       const ElevatorSnapshot &snapshot, bool selected) {
   SDL_Renderer *renderer = context.renderer;
   const SDL_FRect car =
       elevatorCarRect(context, id, snapshot.currentFloor);
@@ -291,17 +313,35 @@ void renderElevator(const RenderContext &context, ElevatorId id,
   SDL_SetRenderDrawColor(renderer, 216, 168, 78, 255);
   SDL_RenderFillRect(renderer, &car);
 
-  constexpr float CAR_BORDER = 5.0F;
-  const SDL_FRect doors{car.x + CAR_BORDER, car.y + CAR_BORDER,
-                        car.w - 2.0F * CAR_BORDER,
-                        car.h - 2.0F * CAR_BORDER};
-  SDL_SetRenderDrawColor(renderer, 183, 194, 204, 255);
-  SDL_RenderFillRect(renderer, &doors);
+  const SDL_FRect doorway = elevatorDoorwayRect(car);
+  SDL_SetRenderDrawColor(renderer, 25, 33, 43, 255);
+  SDL_RenderFillRect(renderer, &doorway);
+}
 
-  SDL_SetRenderDrawColor(renderer, 54, 64, 74, 255);
-  const SDL_FRect doorSeam{doors.x + doors.w / 2.0F - 1.0F, doors.y, 2.0F,
-                           doors.h};
-  SDL_RenderFillRect(renderer, &doorSeam);
+void renderElevatorDoor(const RenderContext &context, ElevatorId id,
+                        const ElevatorSnapshot &snapshot) {
+  SDL_Renderer *renderer = context.renderer;
+  const SDL_FRect car =
+      elevatorCarRect(context, id, snapshot.currentFloor);
+  const SDL_FRect doorway = elevatorDoorwayRect(car);
+  const float openness = doorOpenness(snapshot);
+  const float panelWidth = doorway.w / 2.0F * (1.0F - openness);
+
+  if (panelWidth > 0.0F) {
+    SDL_SetRenderDrawColor(renderer, 183, 194, 204, 255);
+    const SDL_FRect leftPanel{doorway.x, doorway.y, panelWidth, doorway.h};
+    const SDL_FRect rightPanel{doorway.x + doorway.w - panelWidth, doorway.y,
+                               panelWidth, doorway.h};
+    SDL_RenderFillRect(renderer, &leftPanel);
+    SDL_RenderFillRect(renderer, &rightPanel);
+
+    SDL_SetRenderDrawColor(renderer, 54, 64, 74, 255);
+    const SDL_FRect leftEdge{leftPanel.x + leftPanel.w - 1.0F, doorway.y,
+                             1.0F, doorway.h};
+    const SDL_FRect rightEdge{rightPanel.x, doorway.y, 1.0F, doorway.h};
+    SDL_RenderFillRect(renderer, &leftEdge);
+    SDL_RenderFillRect(renderer, &rightEdge);
+  }
 
   if (snapshot.direction == Direction::Up) {
     SDL_SetRenderDrawColor(renderer, 116, 201, 142, 255);
@@ -315,11 +355,17 @@ void renderElevator(const RenderContext &context, ElevatorId id,
   SDL_RenderFillRect(renderer, &indicator);
 }
 
-void renderElevators(const RenderContext &context) {
+void renderElevatorCars(const RenderContext &context) {
   for (ElevatorId id = 0; id < context.snapshot.elevators.size(); ++id) {
-    renderElevator(context, id, context.snapshot.elevators[id],
-                   !context.simulationMode &&
-                       id == context.ui.selectedElevator);
+    renderElevatorCar(context, id, context.snapshot.elevators[id],
+                      !context.simulationMode &&
+                          id == context.ui.selectedElevator);
+  }
+}
+
+void renderElevatorDoors(const RenderContext &context) {
+  for (ElevatorId id = 0; id < context.snapshot.elevators.size(); ++id) {
+    renderElevatorDoor(context, id, context.snapshot.elevators[id]);
   }
 }
 
@@ -649,8 +695,9 @@ void rendering::renderFrame(SDL_Renderer *renderer, const UiState &uiState,
   SDL_RenderClear(renderer);
 
   renderBuilding(context);
-  renderElevators(context);
+  renderElevatorCars(context);
   renderPassengers(context);
+  renderElevatorDoors(context);
   renderStatusPanel(context);
 
   if (uiState.showHelp) {
