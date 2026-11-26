@@ -14,7 +14,10 @@ add_library(elevator_core
 
 target_include_directories(elevator_core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 
-add_executable(elevator-system src/main.cpp)
+add_executable(elevator-system
+    src/main.cpp
+    src/rendering.cpp
+)
 
 target_link_libraries(elevator-system PRIVATE elevator_core SDL3::SDL3)
 
