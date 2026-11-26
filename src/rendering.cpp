@@ -342,7 +342,7 @@ void renderHelpOverlay(SDL_Renderer *renderer) {
   constexpr float DESCRIPTION_X = HELP_X + 210.0F;
   float y = HELP_Y + 78.0F;
 
-  SDL_RenderDebugText(renderer, LABEL_X, y, "1 - 5");
+  SDL_RenderDebugText(renderer, LABEL_X, y, "1 - 8");
   SDL_RenderDebugText(renderer, DESCRIPTION_X, y, "SELECT FLOOR");
   y += 38.0F;
   SDL_RenderDebugText(renderer, LABEL_X, y, "LEFT / RIGHT");

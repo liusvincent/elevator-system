@@ -40,7 +40,7 @@ SDL_AppResult handleKey(SDL_Keycode key, SDL_Keymod modifiers) {
     return SDL_APP_CONTINUE;
   }
 
-  if (key >= SDLK_1 && key <= SDLK_5) {
+  if (key >= SDLK_1 && key <= SDLK_8) {
     ui.selectedFloor = static_cast<int>(key - SDLK_1) + MIN_FLOOR;
     return SDL_APP_CONTINUE;
   }

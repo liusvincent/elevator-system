@@ -3,7 +3,7 @@
 #include <optional>
 #include <set>
 
-inline constexpr int MAX_FLOOR = 5;
+inline constexpr int MAX_FLOOR = 8;
 inline constexpr int MIN_FLOOR = 1;
 
 enum class Direction { Down = -1, Idle = 0, Up = 1 };
