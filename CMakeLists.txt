@@ -9,6 +9,7 @@ add_subdirectory(external/SDL)
 add_library(elevator_core
     src/elevator.cpp
     src/dispatcher.cpp
+    src/passenger.cpp
     src/simulation.cpp
 )
 
@@ -40,4 +41,10 @@ add_executable(simulation_tests tests/test_simulation.cpp)
 target_link_libraries(simulation_tests PRIVATE elevator_core)
 
 add_test(NAME simulation_tests COMMAND simulation_tests)
+
+add_executable(passenger_tests tests/test_passenger.cpp)
+
+target_link_libraries(passenger_tests PRIVATE elevator_core)
+
+add_test(NAME passenger_tests COMMAND passenger_tests)
 
