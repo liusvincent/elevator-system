@@ -66,6 +66,11 @@ std::vector<DispatcherServiceEvent> Dispatcher::tick() {
 
 std::size_t Dispatcher::elevatorCount() const { return elevators_.size(); }
 
+std::size_t
+Dispatcher::elevatorCapacity(ElevatorId elevatorId) const {
+  return elevators_.at(elevatorId).capacity();
+}
+
 ElevatorSnapshot
 Dispatcher::elevatorSnapshot(ElevatorId elevatorId) const {
   return elevators_.at(elevatorId).snapshot();

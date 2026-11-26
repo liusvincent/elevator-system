@@ -30,6 +30,7 @@ public:
   std::vector<DispatcherServiceEvent> tick();
 
   std::size_t elevatorCount() const;
+  std::size_t elevatorCapacity(ElevatorId elevatorId) const;
   ElevatorSnapshot elevatorSnapshot(ElevatorId elevatorId) const;
   std::vector<HallCallAssignment> hallCallAssignments() const;
   std::optional<ElevatorId> assignedElevator(HallCall call) const;

@@ -180,6 +180,9 @@ void testTagsServiceEventWithElevatorId() {
   Dispatcher dispatcher{2};
   dispatcher.selectFloor(1, MIN_FLOOR);
 
+  expect(dispatcher.tick().empty(),
+         "Service event should wait until the doors open");
+  tick(dispatcher, simulation_timing::DOOR_OPENING_TICKS - 1);
   const std::vector<DispatcherServiceEvent> events = dispatcher.tick();
 
   expect(events.size() == 1, "Expected one service event");
@@ -198,6 +201,9 @@ void testClearsCompletedAssignment() {
          "Hall call should be assigned");
 
   dispatcher.tick();
+  expect(dispatcher.assignedElevator(call).has_value(),
+         "Hall call should remain assigned while doors open");
+  tick(dispatcher, simulation_timing::DOOR_OPENING_TICKS);
 
   expect(!dispatcher.assignedElevator(call).has_value(),
          "Completed hall call assignment should be removed");
@@ -209,6 +215,7 @@ void testAllowsHallCallAgainAfterCompletion() {
 
   dispatcher.addHallCall(call);
   dispatcher.tick();
+  tick(dispatcher, simulation_timing::DOOR_OPENING_TICKS);
   dispatcher.addHallCall(call);
 
   expect(dispatcher.assignedElevator(call) == ElevatorId{0},

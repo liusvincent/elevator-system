@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <optional>
 #include <set>
 
@@ -37,7 +38,9 @@ struct ElevatorSnapshot {
 
 class Elevator {
 public:
-  Elevator();
+  static constexpr std::size_t DEFAULT_CAPACITY = 6;
+
+  explicit Elevator(std::size_t capacity = DEFAULT_CAPACITY);
 
   void addInternalRequest(int floor);
   void assignHallCall(HallCall call);
@@ -46,14 +49,15 @@ public:
 
   ElevatorSnapshot snapshot() const;
   bool hasPendingRequests() const;
+  std::size_t capacity() const;
 
 private:
   std::optional<ServiceEvent> chooseNextAction();
   std::optional<ServiceEvent> advanceMovement();
-  std::optional<ServiceEvent> beginService();
+  std::optional<ServiceEvent> advanceDoors();
 
+  void beginService();
   void beginMoving();
-  void advanceDoors();
   void chooseDirection();
 
   bool hasRequestAtCurrentFloor() const;
@@ -66,6 +70,8 @@ private:
   Direction direction_;
   ElevatorState state_;
   int stateTicksElapsed_;
+  std::size_t capacity_;
+  std::optional<ServiceEvent> serviceWhenDoorsOpen_;
   std::set<int> internalRequests_;
   std::set<int> upHallCalls_;
   std::set<int> downHallCalls_;

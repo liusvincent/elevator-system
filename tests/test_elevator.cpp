@@ -60,6 +60,29 @@ void testStartsIdleAtMinimumFloor() {
          "Elevator should start without pending requests");
 }
 
+void testReportsConfiguredCapacity() {
+  const Elevator defaultElevator;
+  const Elevator customElevator{10};
+
+  expect(defaultElevator.capacity() == Elevator::DEFAULT_CAPACITY,
+         "Elevator should use its default capacity");
+  expect(customElevator.capacity() == 10,
+         "Elevator should retain its configured capacity");
+}
+
+void testRejectsZeroCapacity() {
+  bool threwExpectedException = false;
+
+  try {
+    const Elevator elevator{0};
+  } catch (const std::invalid_argument &) {
+    threwExpectedException = true;
+  }
+
+  expect(threwExpectedException,
+         "Elevator should reject a capacity of zero");
+}
+
 void testBeginsMovingWithoutChangingFloor() {
   Elevator elevator;
   elevator.addInternalRequest(3);
@@ -110,20 +133,27 @@ void testServicesRequestAtCurrentFloor() {
   Elevator elevator;
   elevator.addInternalRequest(MIN_FLOOR);
 
-  const std::optional<ServiceEvent> event = elevator.tick();
-  const ElevatorSnapshot snapshot = elevator.snapshot();
+  const std::optional<ServiceEvent> earlyEvent = elevator.tick();
+  const ElevatorSnapshot openingSnapshot = elevator.snapshot();
 
-  expect(event.has_value(), "The current-floor request should be served");
+  expect(!earlyEvent, "Service should wait until the doors are fully open");
+  expect(openingSnapshot.currentFloor == MIN_FLOOR,
+         "Elevator should not move for a current-floor request");
+  expect(openingSnapshot.state == ElevatorState::DoorOpening,
+         "Servicing should begin door opening");
+  expectNear(openingSnapshot.stateProgress, 0.0F,
+             "Door opening should begin at zero progress");
+
+  tick(elevator, simulation_timing::DOOR_OPENING_TICKS - 1);
+  const std::optional<ServiceEvent> event = elevator.tick();
+
+  expect(event.has_value(), "Open doors should produce the service event");
   expect(event->floor == MIN_FLOOR,
          "The service event should contain the serviced floor");
   expect(event->servedInternalRequest,
          "The event should identify the internal request");
-  expect(snapshot.currentFloor == MIN_FLOOR,
-         "Elevator should not move for a current-floor request");
-  expect(snapshot.state == ElevatorState::DoorOpening,
-         "Servicing should begin door opening");
-  expectNear(snapshot.stateProgress, 0.0F,
-             "Door opening should begin at zero progress");
+  expect(elevator.snapshot().state == ElevatorState::DoorOpen,
+         "Service event should coincide with fully open doors");
 }
 
 void testDoorPhasesUseConfiguredDurations() {
@@ -216,6 +246,9 @@ int main() {
 
   failures += !runTest("starts idle at minimum floor",
                        testStartsIdleAtMinimumFloor);
+  failures += !runTest("reports configured capacity",
+                       testReportsConfiguredCapacity);
+  failures += !runTest("rejects zero capacity", testRejectsZeroCapacity);
   failures += !runTest("begins moving without changing floor",
                        testBeginsMovingWithoutChangingFloor);
   failures += !runTest("travels one floor in configured duration",

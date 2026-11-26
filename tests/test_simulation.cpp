@@ -85,11 +85,193 @@ void testAssignsHallCall() {
          "Snapshot should expose the assigned elevator");
 }
 
+void testSpawnsPassengerAndCreatesHallCall() {
+  Simulation simulation{1};
+
+  const PassengerId passengerId = simulation.spawnPassenger(2, 6);
+  const SimulationSnapshot snapshot = simulation.snapshot();
+  const PassengerSnapshot &passenger = snapshot.passengers.at(passengerId);
+
+  expect(passenger.id == passengerId,
+         "Spawned passenger should be present in the snapshot");
+  expect(passenger.state == PassengerState::Waiting,
+         "Spawned passenger should start waiting");
+  expect(passenger.originFloor == 2 && passenger.destinationFloor == 6,
+         "Spawned passenger should retain its trip");
+  expect(snapshot.assignedElevator({2, Direction::Up}) == ElevatorId{0},
+         "Spawned passenger should create the correct hall call");
+}
+
+void testPassengerWaitsUntilDoorsOpen() {
+  Simulation simulation{1};
+  const PassengerId passengerId =
+      simulation.spawnPassenger(MIN_FLOOR, 4);
+
+  simulation.tick();
+
+  const SimulationSnapshot snapshot = simulation.snapshot();
+  expect(snapshot.elevators.at(0).state == ElevatorState::DoorOpening,
+         "Elevator should begin opening its doors");
+  expect(snapshot.passengers.at(passengerId).state == PassengerState::Waiting,
+         "Passenger should wait until the doors are fully open");
+}
+
+void testPassengerCompletesJourney() {
+  Simulation simulation{1};
+  const PassengerId passengerId =
+      simulation.spawnPassenger(MIN_FLOOR, 5);
+  bool observedRiding = false;
+  bool observedDestinationRequest = false;
+
+  for (int tick = 0; tick < 2'000; ++tick) {
+    simulation.tick();
+    const SimulationSnapshot snapshot = simulation.snapshot();
+    const PassengerSnapshot &passenger = snapshot.passengers.at(passengerId);
+
+    if (passenger.state == PassengerState::Riding) {
+      observedRiding = true;
+      expect(passenger.elevatorId == ElevatorId{0},
+             "Riding passenger should identify their elevator");
+      expect(passenger.boardedAtTick.has_value(),
+             "Riding passenger should record their boarding tick");
+      observedDestinationRequest |=
+          snapshot.elevators.at(0).hasPendingRequests;
+    }
+
+    if (passenger.state == PassengerState::Arrived) {
+      expect(passenger.arrivedAtTick.has_value(),
+             "Arrived passenger should record their arrival tick");
+      expect(passenger.boardedAtTick < passenger.arrivedAtTick,
+             "Passenger should arrive after boarding");
+      expect(!passenger.elevatorId.has_value(),
+             "Arrived passenger should no longer be inside an elevator");
+
+      expect(observedRiding,
+             "Passenger journey should include the riding state");
+      expect(observedDestinationRequest,
+             "Boarding should create an internal destination request");
+      return;
+    }
+  }
+
+  throw std::runtime_error(
+      "Passenger did not complete the journey within the tick limit");
+}
+
+void testElevatorCapacityAndRemainingQueue() {
+  Simulation simulation{1};
+  constexpr int EXTRA_PASSENGERS = 2;
+  constexpr std::size_t CAPACITY = Elevator::DEFAULT_CAPACITY;
+
+  for (std::size_t i = 0; i < CAPACITY + EXTRA_PASSENGERS; ++i) {
+    simulation.spawnPassenger(MIN_FLOOR, 5);
+  }
+
+  bool observedFullElevator = false;
+  bool observedReactivatedHallCall = false;
+
+  for (int tick = 0; tick < 5'000; ++tick) {
+    simulation.tick();
+    const SimulationSnapshot snapshot = simulation.snapshot();
+
+    std::size_t waiting = 0;
+    std::size_t riding = 0;
+    std::size_t arrived = 0;
+
+    for (const PassengerSnapshot &passenger : snapshot.passengers) {
+      switch (passenger.state) {
+      case PassengerState::Waiting:
+        ++waiting;
+        break;
+      case PassengerState::Riding:
+        ++riding;
+        break;
+      case PassengerState::Arrived:
+        ++arrived;
+        break;
+      }
+    }
+
+    if (!observedFullElevator && riding > 0) {
+      expect(riding == CAPACITY,
+             "Elevator should board passengers only up to capacity");
+      expect(waiting == EXTRA_PASSENGERS,
+             "Passengers above capacity should remain waiting");
+      expect(!snapshot
+                  .assignedElevator({MIN_FLOOR, Direction::Up})
+                  .has_value(),
+             "Remaining passengers should wait for the full elevator to "
+             "depart before requesting another");
+      observedFullElevator = true;
+    }
+
+    if (observedFullElevator &&
+        snapshot.assignedElevator({MIN_FLOOR, Direction::Up}).has_value()) {
+      observedReactivatedHallCall = true;
+    }
+
+    if (arrived == CAPACITY + EXTRA_PASSENGERS) {
+      expect(observedFullElevator,
+             "Scenario should exercise the elevator capacity limit");
+      expect(observedReactivatedHallCall,
+             "Remaining passengers should reactivate their hall call");
+      return;
+    }
+  }
+
+  throw std::runtime_error(
+      "Capacity scenario did not finish within the tick limit");
+}
+
+void testPassengerArrivingAtOpenDoorsWaitsForDeparture() {
+  Simulation simulation{1};
+  const PassengerId firstPassenger =
+      simulation.spawnPassenger(MIN_FLOOR, 5);
+
+  while (simulation.snapshot().passengers.at(firstPassenger).state !=
+         PassengerState::Riding) {
+    simulation.tick();
+  }
+
+  const PassengerId latePassenger =
+      simulation.spawnPassenger(MIN_FLOOR, 4);
+  expect(!simulation.snapshot()
+              .assignedElevator({MIN_FLOOR, Direction::Up})
+              .has_value(),
+         "A passenger arriving at open doors should wait for departure");
+
+  for (int tick = 0; tick < 1'000; ++tick) {
+    simulation.tick();
+    const SimulationSnapshot snapshot = simulation.snapshot();
+
+    if (snapshot.assignedElevator({MIN_FLOOR, Direction::Up}).has_value()) {
+      expect(snapshot.elevators.at(0).state == ElevatorState::Moving,
+             "The next hall call should be made only after departure");
+      expect(snapshot.passengers.at(latePassenger).state ==
+                 PassengerState::Waiting,
+             "The late passenger should remain in the waiting queue");
+      return;
+    }
+  }
+
+  throw std::runtime_error(
+      "Late passenger did not request another elevator after departure");
+}
+
 void testPropagatesServiceEvent() {
   Simulation simulation{1};
   const HallCall call{MIN_FLOOR, Direction::Up};
 
   simulation.addHallCall(call);
+  expect(simulation.tick().empty(),
+         "Service event should wait until the doors open");
+  expect(simulation.snapshot().assignedElevator(call).has_value(),
+         "Hall call should remain assigned while doors open");
+
+  for (int tick = 0; tick < simulation_timing::DOOR_OPENING_TICKS - 1;
+       ++tick) {
+    simulation.tick();
+  }
   const std::vector<DispatcherServiceEvent> events = simulation.tick();
 
   expect(events.size() == 1,
@@ -102,6 +284,36 @@ void testPropagatesServiceEvent() {
          "Service event should identify the hall-call direction");
   expect(!simulation.snapshot().assignedElevator(call).has_value(),
          "Serviced hall call should no longer be assigned");
+}
+
+void testEmptyHallCallDoesNotBlockFuturePassenger() {
+  Simulation simulation{1};
+  const HallCall call{MIN_FLOOR, Direction::Up};
+
+  simulation.addHallCall(call);
+  while (simulation.snapshot().elevators.at(0).state !=
+         ElevatorState::DoorOpen) {
+    simulation.tick();
+  }
+
+  const PassengerId passengerId = simulation.spawnPassenger(MIN_FLOOR, 4);
+  expect(!simulation.snapshot().assignedElevator(call).has_value(),
+         "Passenger should wait while the previous doors remain open");
+
+  for (int tick = 0; tick < 1'000; ++tick) {
+    simulation.tick();
+    const SimulationSnapshot snapshot = simulation.snapshot();
+
+    if (snapshot.assignedElevator(call).has_value()) {
+      expect(snapshot.passengers.at(passengerId).state ==
+                 PassengerState::Waiting,
+             "Passenger should remain queued for the new hall call");
+      return;
+    }
+  }
+
+  throw std::runtime_error(
+      "Empty hall call permanently blocked a future passenger");
 }
 
 void testSameInputsProduceSameState() {
@@ -157,8 +369,20 @@ int main() {
   failures += !runTest("forwards internal request",
                        testForwardsInternalRequest);
   failures += !runTest("assigns hall call", testAssignsHallCall);
+  failures += !runTest("spawns passenger and creates hall call",
+                       testSpawnsPassengerAndCreatesHallCall);
+  failures += !runTest("passenger waits until doors open",
+                       testPassengerWaitsUntilDoorsOpen);
+  failures += !runTest("passenger completes journey",
+                       testPassengerCompletesJourney);
+  failures += !runTest("elevator capacity and remaining queue",
+                       testElevatorCapacityAndRemainingQueue);
+  failures += !runTest("passenger arriving at open doors waits for departure",
+                       testPassengerArrivingAtOpenDoorsWaitsForDeparture);
   failures += !runTest("propagates service event",
                        testPropagatesServiceEvent);
+  failures += !runTest("empty hall call does not block future passenger",
+                       testEmptyHallCallDoesNotBlockFuturePassenger);
   failures += !runTest("same inputs produce same state",
                        testSameInputsProduceSameState);
 

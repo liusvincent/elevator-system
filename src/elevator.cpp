@@ -6,9 +6,14 @@
 #include <limits>
 #include <stdexcept>
 
-Elevator::Elevator()
+Elevator::Elevator(std::size_t capacity)
     : currentFloor_(MIN_FLOOR), direction_(Direction::Idle),
-      state_(ElevatorState::Idle), stateTicksElapsed_(0) {}
+      state_(ElevatorState::Idle), stateTicksElapsed_(0),
+      capacity_(capacity) {
+  if (capacity == 0) {
+    throw std::invalid_argument("Elevator capacity must be greater than zero");
+  }
+}
 
 void Elevator::addInternalRequest(int floor) {
   if (floor < MIN_FLOOR || floor > MAX_FLOOR) {
@@ -48,8 +53,7 @@ std::optional<ServiceEvent> Elevator::tick() {
   case ElevatorState::DoorOpening:
   case ElevatorState::DoorOpen:
   case ElevatorState::DoorClosing:
-    advanceDoors();
-    return std::nullopt;
+    return advanceDoors();
   }
 
   return std::nullopt;
@@ -65,20 +69,24 @@ bool Elevator::hasPendingRequests() const {
          !downHallCalls_.empty();
 }
 
+std::size_t Elevator::capacity() const { return capacity_; }
+
 std::optional<ServiceEvent> Elevator::chooseNextAction() {
   if (direction_ == Direction::Idle) {
     chooseDirection();
   }
 
   if (hasRequestAtCurrentFloor()) {
-    return beginService();
+    beginService();
+    return std::nullopt;
   }
 
   if (!hasRequestInCurrentDirection()) {
     chooseDirection();
 
     if (hasRequestAtCurrentFloor()) {
-      return beginService();
+      beginService();
+      return std::nullopt;
     }
   }
 
@@ -111,7 +119,7 @@ std::optional<ServiceEvent> Elevator::advanceMovement() {
   return chooseNextAction();
 }
 
-std::optional<ServiceEvent> Elevator::beginService() {
+void Elevator::beginService() {
   ServiceEvent event{currentFloor_, false, std::nullopt};
 
   if (internalRequests_.erase(currentFloor_) > 0) {
@@ -126,12 +134,12 @@ std::optional<ServiceEvent> Elevator::beginService() {
   }
 
   if (!event.servedInternalRequest && !event.servedHallCall) {
-    return std::nullopt;
+    return;
   }
 
+  serviceWhenDoorsOpen_ = event;
   state_ = ElevatorState::DoorOpening;
   stateTicksElapsed_ = 0;
-  return event;
 }
 
 void Elevator::beginMoving() {
@@ -150,7 +158,7 @@ void Elevator::beginMoving() {
   stateTicksElapsed_ = 0;
 }
 
-void Elevator::advanceDoors() {
+std::optional<ServiceEvent> Elevator::advanceDoors() {
   ++stateTicksElapsed_;
 
   switch (state_) {
@@ -158,6 +166,10 @@ void Elevator::advanceDoors() {
     if (stateTicksElapsed_ >= simulation_timing::DOOR_OPENING_TICKS) {
       state_ = ElevatorState::DoorOpen;
       stateTicksElapsed_ = 0;
+
+      const std::optional<ServiceEvent> service = serviceWhenDoorsOpen_;
+      serviceWhenDoorsOpen_ = std::nullopt;
+      return service;
     }
     break;
 
@@ -179,6 +191,8 @@ void Elevator::advanceDoors() {
   case ElevatorState::Moving:
     break;
   }
+
+  return std::nullopt;
 }
 
 void Elevator::chooseDirection() {
