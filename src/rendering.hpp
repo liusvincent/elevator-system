@@ -13,6 +13,7 @@ struct UiState {
   int selectedFloor = MIN_FLOOR;
   ElevatorId selectedElevator = 0;
   bool showHelp = false;
+  bool paused = false;
 };
 
 void renderFrame(SDL_Renderer *renderer, const UiState &uiState,

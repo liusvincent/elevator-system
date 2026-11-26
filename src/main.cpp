@@ -4,13 +4,20 @@
 
 #include "rendering.hpp"
 #include "simulation.hpp"
+#include "simulation_timing.hpp"
+
+#include <algorithm>
 
 constexpr int NUM_ELEVATORS = 3;
+constexpr double NANOSECONDS_PER_SECOND = 1'000'000'000.0;
+constexpr double MAX_FRAME_TIME_SECONDS = 0.25;
 
 static SDL_Window *window = nullptr;
 static SDL_Renderer *renderer = nullptr;
 static Simulation simulation{NUM_ELEVATORS};
 static rendering::UiState ui;
+static Uint64 previousTimeNs = 0;
+static double accumulatorSeconds = 0.0;
 
 SDL_AppResult handleKey(SDL_Keycode key, SDL_Keymod modifiers) {
   const bool questionPressed =
@@ -68,7 +75,13 @@ SDL_AppResult handleKey(SDL_Keycode key, SDL_Keymod modifiers) {
     break;
 
   case SDLK_SPACE:
-    simulation.tick();
+    ui.paused = !ui.paused;
+    break;
+
+  case SDLK_N:
+    if (ui.paused) {
+      simulation.tick();
+    }
     break;
   }
 
@@ -95,6 +108,8 @@ SDL_AppResult SDL_AppInit(void **, int, char *[]) {
                                    rendering::WINDOW_HEIGHT,
                                    SDL_LOGICAL_PRESENTATION_LETTERBOX);
 
+  previousTimeNs = SDL_GetTicksNS();
+
   return SDL_APP_CONTINUE;
 }
 
@@ -111,6 +126,22 @@ SDL_AppResult SDL_AppEvent(void *, SDL_Event *event) {
 }
 
 SDL_AppResult SDL_AppIterate(void *) {
+  const Uint64 currentTimeNs = SDL_GetTicksNS();
+  const double elapsedSeconds = std::min(
+      static_cast<double>(currentTimeNs - previousTimeNs) /
+          NANOSECONDS_PER_SECOND,
+      MAX_FRAME_TIME_SECONDS);
+  previousTimeNs = currentTimeNs;
+
+  if (!ui.paused) {
+    accumulatorSeconds += elapsedSeconds;
+  }
+
+  while (accumulatorSeconds >= simulation_timing::SECONDS_PER_TICK) {
+    simulation.tick();
+    accumulatorSeconds -= simulation_timing::SECONDS_PER_TICK;
+  }
+
   rendering::renderFrame(renderer, ui, simulation.snapshot());
   return SDL_APP_CONTINUE;
 }

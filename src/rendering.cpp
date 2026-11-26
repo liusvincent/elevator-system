@@ -259,6 +259,9 @@ void renderStatusPanel(const RenderContext &context) {
   SDL_RenderDebugTextFormat(renderer, PANEL_X + 18.0F, PANEL_Y + 68.0F,
                             "SELECTED ELEVATOR: E%zu",
                             uiState.selectedElevator);
+  SDL_RenderDebugTextFormat(renderer, PANEL_X + 18.0F, PANEL_Y + 86.0F,
+                            "SIMULATION: %s",
+                            uiState.paused ? "PAUSED" : "RUNNING");
 
   for (ElevatorId id = 0; id < snapshot.elevators.size(); ++id) {
     const ElevatorSnapshot &elevator = snapshot.elevators[id];
@@ -303,7 +306,11 @@ void renderStatusPanel(const RenderContext &context) {
 
   SDL_SetRenderDrawColor(renderer, 115, 128, 142, 255);
   SDL_RenderDebugText(renderer, PANEL_X + 18.0F,
-                      PANEL_Y + PANEL_HEIGHT - 60.0F, "SPACE: ADVANCE");
+                      PANEL_Y + PANEL_HEIGHT - 78.0F,
+                      "SPACE: PAUSE / RESUME");
+  SDL_RenderDebugText(renderer, PANEL_X + 18.0F,
+                      PANEL_Y + PANEL_HEIGHT - 60.0F,
+                      "N: STEP WHEN PAUSED");
   SDL_RenderDebugText(renderer, PANEL_X + 18.0F,
                       PANEL_Y + PANEL_HEIGHT - 42.0F, "H / ?: HELP");
 }
@@ -348,7 +355,10 @@ void renderHelpOverlay(SDL_Renderer *renderer) {
   SDL_RenderDebugText(renderer, DESCRIPTION_X, y, "ADD INTERNAL REQUEST");
   y += 38.0F;
   SDL_RenderDebugText(renderer, LABEL_X, y, "SPACE");
-  SDL_RenderDebugText(renderer, DESCRIPTION_X, y, "ADVANCE ONE STEP");
+  SDL_RenderDebugText(renderer, DESCRIPTION_X, y, "PAUSE / RESUME");
+  y += 38.0F;
+  SDL_RenderDebugText(renderer, LABEL_X, y, "N");
+  SDL_RenderDebugText(renderer, DESCRIPTION_X, y, "STEP WHILE PAUSED");
   y += 38.0F;
   SDL_RenderDebugText(renderer, LABEL_X, y, "H / ?");
   SDL_RenderDebugText(renderer, DESCRIPTION_X, y, "TOGGLE HELP");
