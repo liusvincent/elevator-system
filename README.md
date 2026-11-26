@@ -14,3 +14,5 @@ cmake --build build
 ```
 
 Press `H` or `?` in the application to view the controls.
+
+![Elevator simulation](docs/elevator-simulation.gif)
