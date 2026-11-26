@@ -61,7 +61,7 @@ std::optional<ServiceEvent> Elevator::tick() {
 
 ElevatorSnapshot Elevator::snapshot() const {
   return {currentFloor_, direction_, state_, stateProgress(),
-          hasPendingRequests()};
+          hasPendingRequests(), capacity_};
 }
 
 bool Elevator::hasPendingRequests() const {

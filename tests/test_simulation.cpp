@@ -161,7 +161,7 @@ void testPassengerCompletesJourney() {
 void testElevatorCapacityAndRemainingQueue() {
   Simulation simulation{1};
   constexpr int EXTRA_PASSENGERS = 2;
-  constexpr std::size_t CAPACITY = Elevator::DEFAULT_CAPACITY;
+  constexpr std::size_t CAPACITY = DEFAULT_CAPACITY;
 
   for (std::size_t i = 0; i < CAPACITY + EXTRA_PASSENGERS; ++i) {
     simulation.spawnPassenger(MIN_FLOOR, 5);
@@ -354,6 +354,8 @@ void testSameInputsProduceSameState() {
            "Equal inputs should produce equal state progress");
     expect(left.hasPendingRequests == right.hasPendingRequests,
            "Equal inputs should produce equal pending-request state");
+    expect(left.capacity == right.capacity,
+           "Equal inputs should produce equal elevator capacities");
   }
 }
 

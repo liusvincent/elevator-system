@@ -88,8 +88,8 @@ void validateSnapshot(const SimulationSnapshot &snapshot) {
     }
   }
 
-  for (std::size_t count : occupancy) {
-    expect(count <= Elevator::DEFAULT_CAPACITY,
+  for (ElevatorId id = 0; id < occupancy.size(); ++id) {
+    expect(occupancy[id] <= snapshot.elevators[id].capacity,
            "Elevator occupancy should never exceed capacity");
   }
 
@@ -142,7 +142,7 @@ void testOverflowPassengersUseSecondElevator() {
   Simulation simulation{2};
   constexpr std::size_t EXTRA_PASSENGERS = 2;
   constexpr std::size_t PASSENGER_COUNT =
-      Elevator::DEFAULT_CAPACITY + EXTRA_PASSENGERS;
+      DEFAULT_CAPACITY + EXTRA_PASSENGERS;
 
   for (std::size_t i = 0; i < PASSENGER_COUNT; ++i) {
     simulation.spawnPassenger(MIN_FLOOR, 5);
@@ -169,15 +169,15 @@ void testOverflowPassengersUseSecondElevator() {
       }
     }
 
-    if (riding == Elevator::DEFAULT_CAPACITY &&
+    if (riding == DEFAULT_CAPACITY &&
         waiting == EXTRA_PASSENGERS) {
       for (PassengerId passengerId = 0;
-           passengerId < Elevator::DEFAULT_CAPACITY; ++passengerId) {
+           passengerId < DEFAULT_CAPACITY; ++passengerId) {
         expect(snapshot.passengers.at(passengerId).state ==
                    PassengerState::Riding,
                "Passengers should board their queue in FIFO order");
       }
-      for (PassengerId passengerId = Elevator::DEFAULT_CAPACITY;
+      for (PassengerId passengerId = DEFAULT_CAPACITY;
            passengerId < PASSENGER_COUNT; ++passengerId) {
         expect(snapshot.passengers.at(passengerId).state ==
                    PassengerState::Waiting,
@@ -249,9 +249,9 @@ void testOppositeDirectionsBoardSeparately() {
 void testUnloadingFreesCapacityBeforeBoarding() {
   Simulation simulation{1};
   std::vector<PassengerId> arrivingPassengers;
-  arrivingPassengers.reserve(Elevator::DEFAULT_CAPACITY);
+  arrivingPassengers.reserve(DEFAULT_CAPACITY);
 
-  for (std::size_t i = 0; i < Elevator::DEFAULT_CAPACITY; ++i) {
+  for (std::size_t i = 0; i < DEFAULT_CAPACITY; ++i) {
     arrivingPassengers.push_back(
         simulation.spawnPassenger(MIN_FLOOR, 3));
   }
@@ -336,7 +336,7 @@ void testPassengersArrivingDuringDoorPhases() {
 void testPassengerWaitsWhileAllElevatorsAreFull() {
   Simulation simulation{2};
   constexpr std::size_t FLEET_CAPACITY =
-      2 * Elevator::DEFAULT_CAPACITY;
+      2 * DEFAULT_CAPACITY;
 
   for (std::size_t i = 0; i < FLEET_CAPACITY; ++i) {
     simulation.spawnPassenger(MIN_FLOOR, MAX_FLOOR);
@@ -352,8 +352,8 @@ void testPassengerWaitsWhileAllElevatorsAreFull() {
       }
     }
 
-    if (occupancy[0] == Elevator::DEFAULT_CAPACITY &&
-        occupancy[1] == Elevator::DEFAULT_CAPACITY) {
+    if (occupancy[0] == DEFAULT_CAPACITY &&
+        occupancy[1] == DEFAULT_CAPACITY) {
       break;
     }
 

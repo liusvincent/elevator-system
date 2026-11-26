@@ -7,6 +7,9 @@
 #include "simulation_timing.hpp"
 
 #include <algorithm>
+#include <random>
+
+enum class AppMode { Manual, Simulation };
 
 constexpr int NUM_ELEVATORS = 3;
 constexpr double NANOSECONDS_PER_SECOND = 1'000'000'000.0;
@@ -16,35 +19,67 @@ static SDL_Window *window = nullptr;
 static SDL_Renderer *renderer = nullptr;
 static Simulation simulation{NUM_ELEVATORS};
 static rendering::UiState ui;
+static AppMode activeMode = AppMode::Manual;
+static bool showModeMenu = false;
 static Uint64 previousTimeNs = 0;
 static double accumulatorSeconds = 0.0;
+static std::mt19937 passengerRandom{std::random_device{}()};
 
-SDL_AppResult handleKey(SDL_Keycode key, SDL_Keymod modifiers) {
-  const bool questionPressed =
-      key == SDLK_QUESTION ||
-      (key == SDLK_SLASH && (modifiers & SDL_KMOD_SHIFT) != 0);
-
-  if (key == SDLK_H || questionPressed) {
-    ui.showHelp = !ui.showHelp;
-    return SDL_APP_CONTINUE;
+int randomDestination(int originFloor, Direction direction) {
+  if (direction == Direction::Up) {
+    std::uniform_int_distribution<int> destination(originFloor + 1,
+                                                   MAX_FLOOR);
+    return destination(passengerRandom);
   }
 
-  if (key == SDLK_Q) {
-    return SDL_APP_SUCCESS;
+  std::uniform_int_distribution<int> destination(MIN_FLOOR,
+                                                 originFloor - 1);
+  return destination(passengerRandom);
+}
+
+void switchMode(AppMode mode) {
+  if (mode != activeMode) {
+    activeMode = mode;
+    simulation = Simulation{NUM_ELEVATORS};
+    ui = rendering::UiState{};
   }
 
-  if (ui.showHelp) {
-    if (key == SDLK_ESCAPE) {
-      ui.showHelp = false;
-    }
-    return SDL_APP_CONTINUE;
-  }
+  showModeMenu = false;
+  accumulatorSeconds = 0.0;
+}
 
+void handleSharedControls(SDL_Keycode key) {
   if (key >= SDLK_1 && key <= SDLK_8) {
     ui.selectedFloor = static_cast<int>(key - SDLK_1) + MIN_FLOOR;
-    return SDL_APP_CONTINUE;
+    return;
   }
 
+  switch (key) {
+  case SDLK_UP:
+    if (ui.selectedFloor < MAX_FLOOR) {
+      ++ui.selectedFloor;
+    }
+    break;
+
+  case SDLK_DOWN:
+    if (ui.selectedFloor > MIN_FLOOR) {
+      --ui.selectedFloor;
+    }
+    break;
+
+  case SDLK_SPACE:
+    ui.paused = !ui.paused;
+    break;
+
+  case SDLK_N:
+    if (ui.paused) {
+      simulation.tick();
+    }
+    break;
+  }
+}
+
+void handleManualControls(SDL_Keycode key) {
   switch (key) {
   case SDLK_LEFT:
     if (ui.selectedElevator > 0) {
@@ -73,15 +108,79 @@ SDL_AppResult handleKey(SDL_Keycode key, SDL_Keymod modifiers) {
   case SDLK_E:
     simulation.selectFloor(ui.selectedElevator, ui.selectedFloor);
     break;
+  }
+}
 
-  case SDLK_SPACE:
-    ui.paused = !ui.paused;
+void handleSimulationControls(SDL_Keycode key) {
+  switch (key) {
+  case SDLK_U:
+    if (ui.selectedFloor < MAX_FLOOR) {
+      simulation.spawnPassenger(
+          ui.selectedFloor,
+          randomDestination(ui.selectedFloor, Direction::Up));
+    }
     break;
 
-  case SDLK_N:
-    if (ui.paused) {
-      simulation.tick();
+  case SDLK_D:
+    if (ui.selectedFloor > MIN_FLOOR) {
+      simulation.spawnPassenger(
+          ui.selectedFloor,
+          randomDestination(ui.selectedFloor, Direction::Down));
     }
+    break;
+  }
+}
+
+SDL_AppResult handleKey(SDL_Keycode key, SDL_Keymod modifiers) {
+  const bool questionPressed =
+      key == SDLK_QUESTION ||
+      (key == SDLK_SLASH && (modifiers & SDL_KMOD_SHIFT) != 0);
+  const bool modeMenuPressed =
+      key == SDLK_SLASH && (modifiers & SDL_KMOD_SHIFT) == 0;
+
+  if (key == SDLK_Q) {
+    return SDL_APP_SUCCESS;
+  }
+
+  if (showModeMenu) {
+    if (key == SDLK_1) {
+      switchMode(AppMode::Manual);
+    } else if (key == SDLK_2) {
+      switchMode(AppMode::Simulation);
+    } else if (key == SDLK_ESCAPE || modeMenuPressed) {
+      showModeMenu = false;
+      accumulatorSeconds = 0.0;
+    }
+    return SDL_APP_CONTINUE;
+  }
+
+  if (modeMenuPressed) {
+    ui.showHelp = false;
+    showModeMenu = true;
+    accumulatorSeconds = 0.0;
+    return SDL_APP_CONTINUE;
+  }
+
+  if (key == SDLK_H || questionPressed) {
+    ui.showHelp = !ui.showHelp;
+    return SDL_APP_CONTINUE;
+  }
+
+  if (ui.showHelp) {
+    if (key == SDLK_ESCAPE) {
+      ui.showHelp = false;
+    }
+    return SDL_APP_CONTINUE;
+  }
+
+  handleSharedControls(key);
+
+  switch (activeMode) {
+  case AppMode::Manual:
+    handleManualControls(key);
+    break;
+  case AppMode::Simulation:
+    handleSimulationControls(key);
     break;
   }
 
@@ -133,7 +232,7 @@ SDL_AppResult SDL_AppIterate(void *) {
       MAX_FRAME_TIME_SECONDS);
   previousTimeNs = currentTimeNs;
 
-  if (!ui.paused) {
+  if (!ui.paused && !showModeMenu) {
     accumulatorSeconds += elapsedSeconds;
   }
 
@@ -142,7 +241,8 @@ SDL_AppResult SDL_AppIterate(void *) {
     accumulatorSeconds -= simulation_timing::SECONDS_PER_TICK;
   }
 
-  rendering::renderFrame(renderer, ui, simulation.snapshot());
+  rendering::renderFrame(renderer, ui, simulation.snapshot(),
+                         activeMode == AppMode::Simulation, showModeMenu);
   return SDL_APP_CONTINUE;
 }
 

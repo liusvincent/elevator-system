@@ -64,10 +64,14 @@ void testReportsConfiguredCapacity() {
   const Elevator defaultElevator;
   const Elevator customElevator{10};
 
-  expect(defaultElevator.capacity() == Elevator::DEFAULT_CAPACITY,
+  expect(defaultElevator.capacity() == DEFAULT_CAPACITY,
          "Elevator should use its default capacity");
+  expect(defaultElevator.snapshot().capacity == DEFAULT_CAPACITY,
+         "Elevator snapshot should expose its capacity");
   expect(customElevator.capacity() == 10,
          "Elevator should retain its configured capacity");
+  expect(customElevator.snapshot().capacity == 10,
+         "Elevator snapshot should expose custom capacity");
 }
 
 void testRejectsZeroCapacity() {

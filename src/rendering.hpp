@@ -17,6 +17,7 @@ struct UiState {
 };
 
 void renderFrame(SDL_Renderer *renderer, const UiState &uiState,
-                 const SimulationSnapshot &snapshot);
+                 const SimulationSnapshot &snapshot, bool simulationMode,
+                 bool showModeMenu);
 
 } // namespace rendering
