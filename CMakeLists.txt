@@ -48,3 +48,9 @@ target_link_libraries(passenger_tests PRIVATE elevator_core)
 
 add_test(NAME passenger_tests COMMAND passenger_tests)
 
+add_executable(scenario_tests tests/test_scenarios.cpp)
+
+target_link_libraries(scenario_tests PRIVATE elevator_core)
+
+add_test(NAME scenario_tests COMMAND scenario_tests)
+
